@@ -1,0 +1,17 @@
+{
+  "base_url": "https://api.deepseek.com",
+  "endpoint": "",
+  "model": "deepseek-chat",
+  "api_key_env": "DEEPSEEK_API_KEY",
+  "api_key": "",
+  "MAX_CHUNK_TOKENS": 3000,
+  "MAX_RETRIES": 5,
+  "timeout_seconds": 120,
+  "temperature": 0.2,
+  "max_output_tokens": 4096,
+  "source_lang": "English",
+  "target_lang": "Brazilian Portuguese",
+  "glossary_file": "glossary.txt",
+  "prompt_file": "prompts/translation_prompt.txt",
+  "cache_dir": ".cache"
+}

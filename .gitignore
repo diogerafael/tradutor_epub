@@ -1,0 +1,60 @@
+# Livros (origem e traducao) - grandes e com direitos autorais
+*.epub
+*z-lib.sk*
+*z-library.sk*
+*1lib.sk*
+*.mobi
+*.azw3
+*.pdf
+
+# Configuracao local (contem a chave da API)
+config.json
+.env
+.env.*
+!.env.example
+
+# Cache de traducao
+.cache/
+*.cache
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+.venv/
+venv/
+env/
+.venv*/
+pip-wheel-metadata/
+
+# Testes / cobertura
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# Relatorios gerados
+*_report.json
+report.json
+reports/
+
+# Editores / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# SO
+.DS_Store
+Thumbs.db
+desktop.ini

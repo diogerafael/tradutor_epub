@@ -1,0 +1,32 @@
+# Glossário de termos técnicos (inglês = português)
+# Linhas iniciadas com '#' são comentários e são ignoradas.
+# O glossário é enviado como contexto para manter consistência terminológica.
+
+bounded context = bounded context
+aggregate = agregado
+aggregate root = raiz do agregado
+value object = objeto de valor
+repository = repositório
+domain model = modelo de domínio
+dependency injection = injeção de dependência
+domain storytelling = domain storytelling
+domain expert = especialista de domínio
+domain language = linguagem de domínio
+pictogram = pictograma
+actor = ator
+work item = item de trabalho
+activity = atividade
+scenario = cenário
+workshop = workshop
+annotation = anotação
+sentence = sentença
+group = grupo
+modeling = modelagem
+model = modelo
+stakeholder = parte interessada
+requirement = requisito
+requirements = requisitos
+acceptance test = teste de aceitação
+release = release
+workflow = fluxo de trabalho
+feedback = feedback
