@@ -13,6 +13,7 @@ DEFAULTS = {
     "timeout_seconds": 120,
     "temperature": 0.2,
     "max_output_tokens": 4096,
+    "retry_rounds": 2,
     "source_lang": "English",
     "target_lang": "Brazilian Portuguese",
     "glossary_file": "glossary.txt",

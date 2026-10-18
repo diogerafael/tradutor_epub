@@ -1,6 +1,6 @@
 import json
 import sys
-import threading
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from . import epub_io
@@ -56,34 +56,27 @@ def extract_report(zf, content_files, cfg):
     return report
 
 
-_STATS_LOCK = threading.Lock()
-
-
-def _translate_one_chunk(name, ci, key, expected_hash, chunk, client, cache, stats):
+def _translate_one_chunk(name, ci, key, expected_hash, chunk, client, cache):
+    """Traduz um chunk e grava no cache. Retorna (resultados, erro)."""
     try:
         results = translate_chunk(client, chunk)
         cache.save(key, {"file": name, "chunk": ci,
                          "input_hash": expected_hash, "items": results})
-        with _STATS_LOCK:
-            stats["chunks_translated"] += 1
-        return results
+        return results, None
     except TranslationError as e:
-        msg = f"{name} (chunk {ci}): {e}"
-        with _STATS_LOCK:
-            stats["chunks_failed"] += 1
-            stats["errors"].append(msg)
-        print(f"AVISO: falha ao traduzir, mantendo original: {msg}",
-              file=sys.stderr, flush=True)
-        return [p["masked"] for p in chunk]
+        return [p["masked"] for p in chunk], f"{name} (chunk {ci}): {e}"
 
 
-def translate_chunks(name, chunks, client, cache, stats, workers=1, dry_run=False):
+def translate_chunks(name, chunks, client, cache, stats, workers=1, dry_run=False,
+                     retry_rounds=2):
     """Traduz os chunks de um arquivo, reaproveitando o cache.
 
     Com workers > 1, os chunks pendentes sao enviados em paralelo. Nesse
     escopo as chaves de cache sao unicas, entao nao ha corrida na escrita.
+    Chunks que falham sao reprocessados em rodadas extras, sequencialmente.
     """
     results = [None] * len(chunks)
+    failed = {}
     pending = []
 
     for ci, chunk in enumerate(chunks):
@@ -99,35 +92,66 @@ def translate_chunks(name, chunks, client, cache, stats, workers=1, dry_run=Fals
         else:
             pending.append((ci, key, h, chunk))
 
-    if not pending:
-        return results
-
-    if workers <= 1:
+    if pending and workers <= 1:
         for ci, key, h, chunk in pending:
-            results[ci] = _translate_one_chunk(name, ci, key, h, chunk,
-                                               client, cache, stats)
-        return results
+            res, err = _translate_one_chunk(name, ci, key, h, chunk, client, cache)
+            results[ci] = res
+            if err:
+                failed[ci] = (key, h, chunk, err)
+            else:
+                stats["chunks_translated"] += 1
+    elif pending:
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = {
+                pool.submit(_translate_one_chunk, name, ci, key, h, chunk,
+                            client, cache): (ci, key, h, chunk)
+                for ci, key, h, chunk in pending
+            }
+            for fut in as_completed(futures):
+                ci, key, h, chunk = futures[fut]
+                res, err = fut.result()
+                results[ci] = res
+                if err:
+                    failed[ci] = (key, h, chunk, err)
+                else:
+                    stats["chunks_translated"] += 1
+                print(f"  {name} chunk {ci + 1}/{len(chunks)}",
+                      file=sys.stderr, flush=True)
 
-    with ThreadPoolExecutor(max_workers=workers) as pool:
-        futures = {
-            pool.submit(_translate_one_chunk, name, ci, key, h, chunk,
-                        client, cache, stats): ci
-            for ci, key, h, chunk in pending
-        }
-        for fut in as_completed(futures):
-            ci = futures[fut]
-            results[ci] = fut.result()
-            print(f"  {name} chunk {ci + 1}/{len(chunks)}", file=sys.stderr, flush=True)
+    for rnd in range(1, max(0, retry_rounds) + 1):
+        if not failed:
+            break
+        print(f"  {name}: reprocessando {len(failed)} chunk(s) com falha "
+              f"(rodada {rnd}/{retry_rounds})", file=sys.stderr, flush=True)
+        time.sleep(min(10, 2 * rnd))
+        for ci in sorted(failed):
+            key, h, chunk, _ = failed[ci]
+            res, err = _translate_one_chunk(name, ci, key, h, chunk, client, cache)
+            if err is None:
+                results[ci] = res
+                failed.pop(ci)
+                stats["chunks_translated"] += 1
+                stats["chunks_recovered"] += 1
+                print(f"  {name} chunk {ci + 1}: recuperado na rodada {rnd}",
+                      file=sys.stderr, flush=True)
+
+    for ci, (_, _, _, err) in sorted(failed.items()):
+        stats["chunks_failed"] += 1
+        stats["errors"].append(err)
+        print(f"AVISO: falha ao traduzir, mantendo original: {err}",
+              file=sys.stderr, flush=True)
+
     return results
 
 
-def translate(zf, content_files, cfg, out_path=None, dry_run=False, workers=1):
+def translate(zf, content_files, cfg, out_path=None, dry_run=False, workers=1,
+              retry_rounds=2):
     prompt_text, glossary_text, _ = load_context(cfg)
     client = None if dry_run else DeepSeekClient(cfg, glossary_text, prompt_text)
     cache = Cache(cfg.cache_dir)
     translated = {}
     stats = {"chunks_cached": 0, "chunks_translated": 0, "chunks_failed": 0,
-             "segments": 0, "errors": []}
+             "chunks_recovered": 0, "segments": 0, "errors": []}
 
     for name in content_files:
         original_bytes = zf.read(name)
@@ -142,7 +166,8 @@ def translate(zf, content_files, cfg, out_path=None, dry_run=False, workers=1):
         stats["segments"] += len(doc["segs"])
 
         results = translate_chunks(name, chunks, client, cache, stats,
-                                   workers=workers, dry_run=dry_run)
+                                   workers=workers, dry_run=dry_run,
+                                   retry_rounds=retry_rounds)
 
         for chunk, chunk_results in zip(chunks, results):
             for p, r in zip(chunk, chunk_results):

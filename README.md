@@ -57,6 +57,7 @@ python translator.py translate -i "livro.epub" -j 4
 | `--report ARQ` | Salva o relatório de planejamento em JSON |
 | `--dry-run` | Não chama a API e não grava o EPUB |
 | `--workers N`, `-j N` | Traduz N chunks em paralelo dentro do mesmo livro (padrão: 1) |
+| `--retry-rounds N` | Rodadas extras para chunks que falharam (padrão: `retry_rounds`, 2) |
 
 ## Configuração
 
@@ -71,6 +72,7 @@ Tudo em `config.json` (valores padrão em `config.example.json`):
 | `api_key` | `""` | Chave inline (evite; use a variável de ambiente) |
 | `MAX_CHUNK_TOKENS` | `3000` | Tokens por chunk enviado à API |
 | `max_output_tokens` | `4096` | `max_tokens` da requisição |
+| `retry_rounds` | `2` | Rodadas extras de reprocessamento para chunks com falha |
 | `MAX_RETRIES` | `5` | Tentativas por requisição |
 | `timeout_seconds` | `120` | Timeout HTTP |
 | `temperature` | `0.2` | Temperatura de amostragem |
@@ -102,7 +104,8 @@ config, não do diretório atual.
 6. **Validação** — os hashes SHA-256 de todas as imagens são comparados entre a entrada e a
    saída; qualquer divergência aborta com erro.
 
-Falhas em um chunk não interrompem o livro: o texto original é mantido naquele trecho e o
+Falhas em um chunk não interrompem o livro: o chunk é reprocessado em `retry_rounds`
+rodadas extras (sequenciais) e, se ainda falhar, o texto original é mantido naquele trecho e o
 motivo é listado em `AVISO:` no stderr e em `stats["errors"]`.
 
 ## Consistência terminológica

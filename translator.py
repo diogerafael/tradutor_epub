@@ -32,13 +32,21 @@ def main():
         if name == "translate":
             sp.add_argument("--workers", "-j", type=int, default=1,
                             help="chunks traduzidos em paralelo dentro do mesmo livro (default: 1)")
+            sp.add_argument("--retry-rounds", type=int, default=None,
+                            help="rodadas extras para chunks com falha (default: config, 2)")
 
     args = parser.parse_args()
     cfg = load_config(args.config)
 
-    if args.cmd == "translate" and args.workers < 1:
-        print("ERRO: --workers deve ser >= 1")
-        return 1
+    if args.cmd == "translate":
+        if args.workers < 1:
+            print("ERRO: --workers deve ser >= 1")
+            return 1
+        if args.retry_rounds is None:
+            args.retry_rounds = cfg.retry_rounds
+        if args.retry_rounds < 0:
+            print("ERRO: --retry-rounds deve ser >= 0")
+            return 1
 
     if not os.path.exists(args.input):
         print(f"ERRO: arquivo nao encontrado: {args.input}")
@@ -67,9 +75,12 @@ def main():
         print(f"\nIniciando traducao (dry_run={args.dry_run})...")
         _, stats = pipeline.translate(zf, content_files, cfg,
                                       out_path=out_path, dry_run=args.dry_run,
-                                      workers=args.workers)
+                                      workers=args.workers,
+                                      retry_rounds=args.retry_rounds)
         print(f"Chunks em cache: {stats['chunks_cached']}")
         print(f"Chunks traduzidos: {stats['chunks_translated']}")
+        if stats.get("chunks_recovered"):
+            print(f"Chunks recuperados em reprocessamento: {stats['chunks_recovered']}")
         if stats.get("chunks_failed"):
             print(f"Chunks com falha (mantidos no original): {stats['chunks_failed']}")
         if out_path:
