@@ -46,6 +46,7 @@ coverage.xml
 *_report.json
 report.json
 reports/
+*.log
 
 # Editores / IDE
 .vscode/

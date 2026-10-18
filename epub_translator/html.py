@@ -77,7 +77,7 @@ def parse_tag(raw):
     m = _TAG_NAME_RE.match(raw)
     name = m.group(1).lower() if m else ""
     body = raw[:-1] if raw.endswith(">") else raw
-    self_closing = body.rstrip().endswith("/>") or (name in VOID and not closing)
+    self_closing = body.rstrip().endswith("/") or (name in VOID and not closing)
     return name, closing, self_closing
 
 
