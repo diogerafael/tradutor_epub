@@ -97,16 +97,19 @@ config, não do diretório atual.
    sentença (com corte duro por espaço como fallback) e agrupados em chunks do mesmo tamanho.
 4. **Tradução** — cada chunk vai em uma requisição com `response_format: json_object`; a
    resposta é validada (JSON, contagem e placeholders). Se algo falha, há retry com backoff
-   exponencial e, em seguida, fallback item a item. Placeholders perdidos são reenviados ao
-   modelo como hint na próxima tentativa.
+   exponencial e, em seguida, fallback item a item. Um segmento que ainda perde placeholders é
+   retraduzido dividido em sentenças e, em último caso, os placeholders são reposicionados por
+   proporção (a formatação inline pode ficar aproximada, mas o HTML continua balanceado).
 5. **Reconstrução** — os placeholders viram as tags originais, o HTML é remontado e gravado
    num novo zip com `mimetype` sem compressão (requisito do formato EPUB).
 6. **Validação** — os hashes SHA-256 de todas as imagens são comparados entre a entrada e a
    saída; qualquer divergência aborta com erro.
 
 Falhas em um chunk não interrompem o livro: o chunk é reprocessado em `retry_rounds`
-rodadas extras (sequenciais) e, se ainda falhar, o texto original é mantido naquele trecho e o
-motivo é listado em `AVISO:` no stderr e em `stats["errors"]`.
+rodadas extras (sequenciais) e, dentro de cada tentativa, há fallback por segmento, por
+sentença e reposicionamento proporcional de placeholders. Só se nada disso produzir uma
+tradução utilizável o original é mantido, com o motivo em `AVISO:` no stderr e em
+`stats["errors"]`.
 
 ## Consistência terminológica
 
