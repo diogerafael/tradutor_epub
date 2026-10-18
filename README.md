@@ -40,6 +40,12 @@ Traduzir apenas os 20 primeiros arquivos de conteúdo, em outro destino:
 python translator.py translate -i "livro.epub" -o "saida/livro.pt-BR.epub" --limit 20
 ```
 
+Traduzir com 4 chunks em paralelo (dentro do mesmo livro):
+
+```bash
+python translator.py translate -i "livro.epub" -j 4
+```
+
 ### Opções
 
 | Opção | Descrição |
@@ -50,6 +56,7 @@ python translator.py translate -i "livro.epub" -o "saida/livro.pt-BR.epub" --lim
 | `--limit N` | Processa apenas os N primeiros arquivos de conteúdo |
 | `--report ARQ` | Salva o relatório de planejamento em JSON |
 | `--dry-run` | Não chama a API e não grava o EPUB |
+| `--workers N`, `-j N` | Traduz N chunks em paralelo dentro do mesmo livro (padrão: 1) |
 
 ## Configuração
 
@@ -115,6 +122,10 @@ Cada chunk traduzido é gravado em `.cache/<arquivo>_chunk_NNN.json` com um hash
 mascarado. Reprocessar o mesmo livro reaproveita o cache e não chama a API de novo; se o
 texto de origem mudar, o hash diverge e o chunk é retraduzido. O cache é seguro para apagar a
 qualquer momento (ao custo de retraduzir) e nunca é versionado.
+
+Com `--workers N`, os chunks pendentes de um mesmo arquivo são enviados em paralelo. As
+chaves de cache são únicas nesse escopo, então não há corrida na escrita; livros
+diferentes continuam sendo processados em sequência.
 
 ## Estrutura
 

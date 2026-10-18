@@ -29,9 +29,16 @@ def main():
         sp.add_argument("--report", help="salva relatorio JSON neste caminho")
         sp.add_argument("--dry-run", action="store_true",
                         help="nao chama a API e nao grava EPUB (so planeja)")
+        if name == "translate":
+            sp.add_argument("--workers", "-j", type=int, default=1,
+                            help="chunks traduzidos em paralelo dentro do mesmo livro (default: 1)")
 
     args = parser.parse_args()
     cfg = load_config(args.config)
+
+    if args.cmd == "translate" and args.workers < 1:
+        print("ERRO: --workers deve ser >= 1")
+        return 1
 
     if not os.path.exists(args.input):
         print(f"ERRO: arquivo nao encontrado: {args.input}")
@@ -59,7 +66,8 @@ def main():
         pipeline.print_report(report)
         print(f"\nIniciando traducao (dry_run={args.dry_run})...")
         _, stats = pipeline.translate(zf, content_files, cfg,
-                                      out_path=out_path, dry_run=args.dry_run)
+                                      out_path=out_path, dry_run=args.dry_run,
+                                      workers=args.workers)
         print(f"Chunks em cache: {stats['chunks_cached']}")
         print(f"Chunks traduzidos: {stats['chunks_translated']}")
         if stats.get("chunks_failed"):

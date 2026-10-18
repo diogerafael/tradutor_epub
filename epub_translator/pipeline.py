@@ -1,5 +1,7 @@
 import json
 import sys
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from . import epub_io
 from .api import DeepSeekClient, TranslationError, translate_chunk
@@ -54,7 +56,72 @@ def extract_report(zf, content_files, cfg):
     return report
 
 
-def translate(zf, content_files, cfg, out_path=None, dry_run=False):
+_STATS_LOCK = threading.Lock()
+
+
+def _translate_one_chunk(name, ci, key, expected_hash, chunk, client, cache, stats):
+    try:
+        results = translate_chunk(client, chunk)
+        cache.save(key, {"file": name, "chunk": ci,
+                         "input_hash": expected_hash, "items": results})
+        with _STATS_LOCK:
+            stats["chunks_translated"] += 1
+        return results
+    except TranslationError as e:
+        msg = f"{name} (chunk {ci}): {e}"
+        with _STATS_LOCK:
+            stats["chunks_failed"] += 1
+            stats["errors"].append(msg)
+        print(f"AVISO: falha ao traduzir, mantendo original: {msg}",
+              file=sys.stderr, flush=True)
+        return [p["masked"] for p in chunk]
+
+
+def translate_chunks(name, chunks, client, cache, stats, workers=1, dry_run=False):
+    """Traduz os chunks de um arquivo, reaproveitando o cache.
+
+    Com workers > 1, os chunks pendentes sao enviados em paralelo. Nesse
+    escopo as chaves de cache sao unicas, entao nao ha corrida na escrita.
+    """
+    results = [None] * len(chunks)
+    pending = []
+
+    for ci, chunk in enumerate(chunks):
+        key = cache_key(name, ci)
+        h = chunk_hash(chunk)
+        cached = cache.load(key)
+        if cached and cached.get("input_hash") == h and len(cached.get("items", [])) == len(chunk):
+            results[ci] = cached["items"]
+            stats["chunks_cached"] += 1
+        elif dry_run:
+            results[ci] = [p["masked"] for p in chunk]
+            stats["chunks_translated"] += 1
+        else:
+            pending.append((ci, key, h, chunk))
+
+    if not pending:
+        return results
+
+    if workers <= 1:
+        for ci, key, h, chunk in pending:
+            results[ci] = _translate_one_chunk(name, ci, key, h, chunk,
+                                               client, cache, stats)
+        return results
+
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = {
+            pool.submit(_translate_one_chunk, name, ci, key, h, chunk,
+                        client, cache, stats): ci
+            for ci, key, h, chunk in pending
+        }
+        for fut in as_completed(futures):
+            ci = futures[fut]
+            results[ci] = fut.result()
+            print(f"  {name} chunk {ci + 1}/{len(chunks)}", file=sys.stderr, flush=True)
+    return results
+
+
+def translate(zf, content_files, cfg, out_path=None, dry_run=False, workers=1):
     prompt_text, glossary_text, _ = load_context(cfg)
     client = None if dry_run else DeepSeekClient(cfg, glossary_text, prompt_text)
     cache = Cache(cfg.cache_dir)
@@ -74,32 +141,11 @@ def translate(zf, content_files, cfg, out_path=None, dry_run=False):
         chunks = chunk_pieces(pieces, cfg.MAX_CHUNK_TOKENS)
         stats["segments"] += len(doc["segs"])
 
-        for ci, chunk in enumerate(chunks):
-            key = cache_key(name, ci)
-            h = chunk_hash(chunk)
-            cached = cache.load(key)
-            if cached and cached.get("input_hash") == h and len(cached.get("items", [])) == len(chunk):
-                results = cached["items"]
-                stats["chunks_cached"] += 1
-            else:
-                if dry_run:
-                    results = [p["masked"] for p in chunk]
-                    stats["chunks_translated"] += 1
-                else:
-                    try:
-                        results = translate_chunk(client, chunk)
-                        cache.save(key, {"file": name, "chunk": ci,
-                                         "input_hash": h, "items": results})
-                        stats["chunks_translated"] += 1
-                    except TranslationError as e:
-                        msg = f"{name} (chunk {ci}): {e}"
-                        stats["chunks_failed"] += 1
-                        stats["errors"].append(msg)
-                        print(f"AVISO: falha ao traduzir, mantendo original: {msg}",
-                              file=sys.stderr)
-                        results = [p["masked"] for p in chunk]
+        results = translate_chunks(name, chunks, client, cache, stats,
+                                   workers=workers, dry_run=dry_run)
 
-            for p, r in zip(chunk, results):
+        for chunk, chunk_results in zip(chunks, results):
+            for p, r in zip(chunk, chunk_results):
                 p["translated"] = r
 
         for seg in doc["segs"]:
